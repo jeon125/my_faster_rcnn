@@ -12,9 +12,6 @@ from torchvision.models.detection import fasterrcnn_resnet50_fpn
 import cv2
 from torchvision.ops import nms
 
-# ✅ 모델 및 환경 설정
-device = torch.device("cpu")
-
 # ✅ Google Drive에서 모델 다운로드 함수
 def download_model(model_name, drive_link):
     model_path = f"models/{model_name}"
@@ -34,6 +31,7 @@ model_links = {
 }
 
 # ✅ 훈련된 Faster R-CNN 모델 로드 함수
+@st.cache_resource
 def load_model(model_path, num_classes, device):
     model = fasterrcnn_resnet50_fpn(pretrained=True)
     in_features = model.roi_heads.box_predictor.cls_score.in_features
@@ -42,6 +40,9 @@ def load_model(model_path, num_classes, device):
     model.to(device)
     model.eval()
     return model
+
+# ✅ 모델 및 환경 설정
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ✅ 모델 다운로드 및 로드
 model_path_single = download_model("best_model.pth", model_links["best_model.pth"])  # 단일 모델
@@ -62,9 +63,7 @@ st.sidebar.markdown("<h3 style='font-size:20px;'>🛠 사용할 모델을 선택
 model_option = st.sidebar.selectbox("", ["단일 모델", "K-Fold 앙상블"])
 
 # ✅ 선택한 모델 로드
-if model_option == "K-Fold 앙상블":
-    models = [load_model(path, num_classes=5, device=device) for path in model_paths_kfold]
-else:
+if model_option == "단일 모델":
     model = load_model(model_path_single, num_classes=5, device=device)
 
 # ✅ 왼쪽 사이드바에 이미지 업로드 추가
@@ -131,18 +130,29 @@ if uploaded_files:
         final_boxes = boxes[keep]
         final_scores = scores[keep]
         final_labels = labels[keep]
-    else:  # K-Fold 모델 앙상블
-        all_preds = [model([img_tensor])[0] for model in models]
-        img_boxes = torch.cat([pred["boxes"] for pred in all_preds], dim=0)
-        img_scores = torch.cat([pred["scores"] for pred in all_preds], dim=0)
-        img_labels = torch.cat([pred["labels"] for pred in all_preds], dim=0)
+
+    else:  # ✅ K-Fold 모델 Lazy Loading 적용 (한 번에 로드 X, 하나씩 불러오기)
+        final_boxes_list, final_scores_list, final_labels_list = [], [], []
         
+        for path in model_paths_kfold:
+            model_kfold = load_model(path, num_classes=5, device=device)  # 하나씩 로드
+            with torch.no_grad():
+                pred = model_kfold([img_tensor])[0]
+            final_boxes_list.append(pred["boxes"])
+            final_scores_list.append(pred["scores"])
+            final_labels_list.append(pred["labels"])
+
+        # ✅ 결과 병합
+        final_boxes = torch.cat(final_boxes_list, dim=0)
+        final_scores = torch.cat(final_scores_list, dim=0)
+        final_labels = torch.cat(final_labels_list, dim=0)
+
         # ✅ NMS 적용
         iou_threshold, score_threshold = 0.3, 0.5
-        keep = img_scores > score_threshold
-        img_boxes, img_scores, img_labels = img_boxes[keep], img_scores[keep], img_labels[keep]
-        keep_indices = nms(img_boxes, img_scores, iou_threshold)
-        final_boxes, final_scores, final_labels = img_boxes[keep_indices], img_scores[keep_indices], img_labels[keep_indices]
+        keep = final_scores > score_threshold
+        final_boxes, final_scores, final_labels = final_boxes[keep], final_scores[keep], final_labels[keep]
+        keep_indices = nms(final_boxes, final_scores, iou_threshold)
+        final_boxes, final_scores, final_labels = final_boxes[keep_indices], final_scores[keep_indices], final_labels[keep_indices]
 
     # ✅ 이전/다음 버튼 UI (비활성화 추가)
     col1, col2, col3 = st.columns([1, 6, 1])
