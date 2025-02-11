@@ -17,7 +17,7 @@ def download_model(model_name, drive_link):
     model_path = f"models/{model_name}"
     if not os.path.exists(model_path):  # 모델이 없으면 다운로드
         os.makedirs("models", exist_ok=True)  # 폴더 생성
-        gdown.download(drive_link, model_path, quiet=False)
+        gdown.download(drive_link, model_path, quiet=False, use_cookies=False)
     return model_path
 
 # ✅ Google Drive 공유 링크 설정 (ID 변경 필요)
@@ -36,7 +36,7 @@ def load_model(model_path, num_classes, device):
     model = fasterrcnn_resnet50_fpn(pretrained=True)
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-    model.load_state_dict(torch.load(model_path, map_location=device), strict=False)
+    model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device)
     model.eval()
     return model
