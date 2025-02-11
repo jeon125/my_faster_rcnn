@@ -31,6 +31,7 @@ model_links = {
 }
 
 # ✅ 훈련된 Faster R-CNN 모델 로드 함수
+@st.cache_resource
 def load_model(model_path, num_classes, device):
     model = fasterrcnn_resnet50_fpn(pretrained=True)
     in_features = model.roi_heads.box_predictor.cls_score.in_features
