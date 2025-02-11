@@ -112,7 +112,17 @@ if uploaded_files:
     if model_option == "단일 모델":
         with torch.no_grad():
             pred = model([img_tensor])[0]
-        final_boxes, final_scores, final_labels = pred["boxes"], pred["scores"], pred["labels"]
+            # ✅ 바운딩 박스, 점수, 라벨 추출
+        boxes = pred["boxes"]
+        scores = pred["scores"]
+        labels = pred["labels"]
+
+        # ✅ 신뢰도 임계값(0.5) 적용
+        threshold = 0.5
+        keep = scores > threshold
+        final_boxes = boxes[keep]
+        final_scores = scores[keep]
+        final_labels = labels[keep]
     else:
         all_preds = [model([img_tensor])[0] for model in models]
         img_boxes = torch.cat([pred["boxes"] for pred in all_preds], dim=0)
@@ -124,14 +134,46 @@ if uploaded_files:
         img_boxes, img_scores, img_labels = img_boxes[keep], img_scores[keep], img_labels[keep]
         keep_indices = nms(img_boxes, img_scores, iou_threshold)
         final_boxes, final_scores, final_labels = img_boxes[keep_indices], img_scores[keep_indices], img_labels[keep_indices]
+    # ✅ 이전/다음 버튼 UI (비활성화 추가)
+    col1, col2, col3 = st.columns([1, 6, 1])
 
-    # ✅ 결과 표시
-    result_text = "⚠ 결함 존재!" if len(final_boxes) > 0 else "✅ 결함 없음!"
-    text_color = "red" if len(final_boxes) > 0 else "black"
-    st.markdown(f"<h2 style='text-align: center; color: {text_color};'>{result_text}</h2>", unsafe_allow_html=True)
+    with col1:
+        st.button("⬅ 이전", key="prev", disabled=(st.session_state.image_index == 0), 
+                  on_click=lambda: st.session_state.update({"image_index": st.session_state.image_index - 1}))
 
-    img_with_boxes = draw_bounding_boxes((img_tensor * 255).byte(), final_boxes, colors="red", width=3)
+    with col3:
+        st.button("다음 ➡", key="next", disabled=(st.session_state.image_index == num_files - 1), 
+                  on_click=lambda: st.session_state.update({"image_index": st.session_state.image_index + 1}))
+                
+    # ✅ 바운딩 박스가 있는지 여부 확인 후 색상 설정
+    if len(final_boxes) > 0:
+        result_text = "⚠ 결함 존재!"
+        text_color = "red"
+    else:
+        result_text = "✅ 결함 없음!"
+        text_color = "black"
+
+    # ✅ 결함 여부 텍스트 출력 (가운데 정렬 + 색상 변경)
+    st.markdown(
+        f"<h2 style='text-align: center; color: {text_color};'>{result_text}</h2>",
+        unsafe_allow_html=True
+    )
+
+    # ✅ 바운딩 박스 시각화
+    img_with_boxes = draw_bounding_boxes(
+        (img_tensor * 255).byte(), final_boxes, colors="red", width=3
+    )
+
+    # ✅ Matplotlib을 사용하여 시각화
     fig, ax = plt.subplots(figsize=(8, 8))
     ax.imshow(img_with_boxes.permute(1, 2, 0).cpu())
+
+    for i in range(len(final_boxes)):
+        x1, y1, _, _ = final_boxes[i]
+        label = labels_inv.get(final_labels[i].item(), "Unknown")
+        score = final_scores[i].item()
+        ax.text(x1.item(), y1.item() - 5, f"{label} ({score:.2f})",
+                color='white', fontsize=15, weight='bold', bbox=dict(facecolor='red', alpha=0.5))
+
     ax.axis("off")
     st.pyplot(fig)
