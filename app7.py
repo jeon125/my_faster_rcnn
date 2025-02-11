@@ -78,13 +78,16 @@ if "image_index" not in st.session_state:
 if uploaded_files:
     num_files = len(uploaded_files)
     
-    # ✅ 슬라이더 추가 (이전/다음 버튼 위에 위치)
-    st.markdown("<h3 style='font-size:20px;'>📷 선택된 이미지</h3>", unsafe_allow_html=True)
-    st.session_state.image_index = st.slider(
-        "", 
-        min_value=0, max_value=len(uploaded_files)-1, 
-        value=st.session_state.image_index
-    )
+    # ✅ 업로드된 이미지가 2개 이상일 때만 슬라이더 표시
+    if num_files > 1:
+        st.markdown("<h3 style='font-size:20px;'>📷 선택된 이미지</h3>", unsafe_allow_html=True)
+        st.session_state.image_index = st.slider(
+            "", 
+            min_value=0, max_value=num_files-1, 
+            value=st.session_state.image_index
+        )
+    else:
+        st.session_state.image_index = 0  # 이미지가 1개뿐이면 0번째 이미지 선택
     
     # ✅ 현재 이미지 선택
     uploaded_file = uploaded_files[st.session_state.image_index]
