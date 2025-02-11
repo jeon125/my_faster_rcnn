@@ -17,17 +17,17 @@ def download_model(model_name, drive_link):
     model_path = f"models/{model_name}"
     if not os.path.exists(model_path):  # 모델이 없으면 다운로드
         os.makedirs("models", exist_ok=True)  # 폴더 생성
-        gdown.download(drive_link, model_path, quiet=False, use_cookies=False)
+        gdown.download(drive_link, model_path, quiet=False)
     return model_path
 
 # ✅ Google Drive 공유 링크 설정 (ID 변경 필요)
 model_links = {
     "best_model.pth": "https://drive.google.com/uc?id=11u2cUNul_DZ0bJmykxXr90c9xYQD13CA",
-    "best_model_fold_1.pth": "https://drive.google.com/uc?id=13JPuwcQLSCkYfl--9zqVngf5nv-R0pSk",
-    "best_model_fold_2.pth": "https://drive.google.com/uc?id=1xa0X7KbHPL5VvFd1Ue6DpYlRSXOYeU5X",
-    "best_model_fold_3.pth": "https://drive.google.com/uc?id=1j23rzkwYMmUaCGeh0rEJco2W3Zt3VDsE",
-    "best_model_fold_4.pth": "https://drive.google.com/uc?id=1Vdu2FsHYW7evr68htF4hp6wTu6BIc9jy",
-    "best_model_fold_5.pth": "https://drive.google.com/uc?id=1VPHxGtXz5SSPFQ11xpws2Ng7mbjANeth",
+    "best_model_fold_1.pth": "https://drive.google.com/uc?id=1ta9lx56Y74ypc87f-vx7fMlofdCS3O6V",
+    "best_model_fold_2.pth": "https://drive.google.com/uc?id=1KzJLz-pMGbUjIVCLBH6WS_ezAsU-nLIi",
+    "best_model_fold_3.pth": "https://drive.google.com/uc?id=1eN69P2RvHW7OrdJAHL6qgAML5_ArWXW3",
+    "best_model_fold_4.pth": "https://drive.google.com/uc?id=10UNC7LV06GZlqnIvmG9S9F0KUEjLRQfW",
+    "best_model_fold_5.pth": "https://drive.google.com/uc?id=11wGXOe6yZZgo8wDmzHrtFiJROn3JusKl",
 }
 
 # ✅ 훈련된 Faster R-CNN 모델 로드 함수
