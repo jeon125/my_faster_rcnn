@@ -16,7 +16,6 @@ from torchvision.ops import nms
 def download_model(model_name, drive_link):
     model_path = f"models/{model_name}"
     if not os.path.exists(model_path):  # 모델이 없으면 다운로드
-        st.write(f"📥 {model_name} 다운로드 중...")
         os.makedirs("models", exist_ok=True)  # 폴더 생성
         gdown.download(drive_link, model_path, quiet=False)
     return model_path
