@@ -14,6 +14,7 @@ from torchvision.ops import nms
 import json
 import io
 import base64
+import zipfile
 
 # ✅ Google Drive에서 모델 다운로드 함수
 def download_model(model_name, drive_link):
@@ -200,37 +201,51 @@ if uploaded_files:
 
     ax.axis("off")
     st.pyplot(fig)
-    
-    # ✅ 이미지 다운로드 함수
-def get_image_download_link(image_pil, filename="result.jpg"):
-    """PIL 이미지 파일을 Base64로 변환하여 다운로드 링크 생성"""
-    buffered = io.BytesIO()
-    image_pil.save(buffered, format="JPEG")
-    img_str = base64.b64encode(buffered.getvalue()).decode()
-    href = f'<a href="data:file/jpg;base64,{img_str}" download="{filename}">📥 결과 이미지 다운로드</a>'
+
+# ✅ 결과 이미지와 JSON 데이터 저장을 위한 리스트
+all_results = []
+all_images = []
+
+# ✅ 이미지 다운로드 함수 (ZIP으로 저장)
+def get_zip_download_link(zip_filename="results.zip"):
+    """여러 개의 결과 파일을 ZIP으로 묶어 다운로드"""
+    zip_buffer = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for img_name, img_pil in all_images:
+            img_io = io.BytesIO()
+            img_pil.save(img_io, format="JPEG")
+            zipf.writestr(f"images/{img_name}", img_io.getvalue())
+
+        # JSON 저장
+        json_str = json.dumps(all_results, indent=4)
+        zipf.writestr("results.json", json_str)
+
+    zip_buffer.seek(0)
+    b64 = base64.b64encode(zip_buffer.getvalue()).decode()
+    href = f'<a href="data:application/zip;base64,{b64}" download="{zip_filename}">📥 결과 ZIP 다운로드</a>'
     return href
 
-# ✅ JSON 다운로드 함수
-def get_json_download_link(json_data, filename="result.json"):
-    """JSON 데이터를 Base64로 변환하여 다운로드 링크 생성"""
-    json_str = json.dumps(json_data, indent=4)
-    b64 = base64.b64encode(json_str.encode()).decode()
-    href = f'<a href="data:file/json;base64,{b64}" download="{filename}">📥 결과 JSON 다운로드</a>'
-    return href
+# ✅ 모든 이미지 저장 버튼 UI
+if st.button("💾 전체 결과 저장"):
+    all_results.clear()
+    all_images.clear()
 
-# ✅ 결과 저장 버튼 UI
-col4, col5 = st.columns(2)
+    for idx, uploaded_file in enumerate(uploaded_files):
+        # ✅ 이미지 로드
+        image_name = uploaded_file.name  # 원본 이미지 파일 이름
+        image = Image.open(uploaded_file).convert("RGB")
 
-with col4:
-    if st.button("💾 결과 이미지 생성"):
+        # ✅ 이미지 처리 (바운딩 박스 추가)
+        img_with_boxes = draw_bounding_boxes(
+            (F.to_tensor(image) * 255).byte(), final_boxes, colors="red", width=3
+        )
+
         img_pil = Image.fromarray(img_with_boxes.permute(1, 2, 0).byte().cpu().numpy())
-        st.markdown(get_image_download_link(img_pil), unsafe_allow_html=True)
 
-with col5:
-    if st.button("📄 결과 JSON 생성"):
-        # JSON 저장할 데이터 생성
+        # ✅ JSON 데이터 저장
         result_data = {
-            "image_index": st.session_state.image_index,
+            "image_name": image_name,
             "num_detections": len(final_boxes),
             "detections": []
         }
@@ -246,4 +261,8 @@ with col5:
                 "bbox": [x1, y1, x2, y2]
             })
 
-        st.markdown(get_json_download_link(result_data), unsafe_allow_html=True)
+        all_results.append(result_data)
+        all_images.append((image_name, img_pil))
+
+    # ✅ ZIP 다운로드 링크 생성
+    st.markdown(get_zip_download_link(), unsafe_allow_html=True)
