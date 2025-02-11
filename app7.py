@@ -31,7 +31,6 @@ model_links = {
 }
 
 # ✅ 훈련된 Faster R-CNN 모델 로드 함수
-@st.cache_resource
 def load_model(model_path, num_classes, device):
     model = fasterrcnn_resnet50_fpn(pretrained=True)
     in_features = model.roi_heads.box_predictor.cls_score.in_features
@@ -62,11 +61,14 @@ st.markdown("### : 훈련된 Faster R-CNN 모델을 사용하여 결함 탐지")
 st.sidebar.markdown("<h3 style='font-size:20px;'>🛠 사용할 모델을 선택하세요</h3>", unsafe_allow_html=True)
 model_option = st.sidebar.selectbox("", ["단일 모델", "K-Fold 앙상블"])
 
-# ✅ 선택한 모델 로드
+# 모델 로드 후 모델들이 동일한 device에 있는지 확인
 if model_option == "K-Fold 앙상블":
     models = [load_model(path, num_classes=5, device=device) for path in model_paths_kfold]
+    for idx, model in enumerate(models):
+        print(f"K-Fold 모델 {idx+1} 디바이스: {next(model.parameters()).device}")  # 확인 코드 추가
 else:
     model = load_model(model_path_single, num_classes=5, device=device)
+    print(f"단일 모델 디바이스: {next(model.parameters()).device}")  # 확인 코드 추가
 
 # ✅ 왼쪽 사이드바에 이미지 업로드 추가
 st.sidebar.markdown("<h3 style='font-size:20px;'>📂 이미지를 업로드하세요</h3>", unsafe_allow_html=True)
@@ -116,6 +118,7 @@ if uploaded_files:
 
     # ✅ 이미지 텐서 변환
     img_tensor = F.to_tensor(image).to(device)
+    print(f"입력 데이터 디바이스: {img_tensor.device}")  # 확인 코드 추가
 
     # ✅ 모델 예측 수행
     if model_option == "단일 모델":  # 단일 모델 사용
