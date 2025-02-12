@@ -19,12 +19,12 @@ import zipfile
 # ✅ Google Drive에서 모델 다운로드 함수
 def download_model(model_name, drive_link):
     model_path = f"models/{model_name}"
-    if not os.path.exists(model_path):  # 모델이 없으면 다운로드
-        os.makedirs("models", exist_ok=True)  
+    if not os.path.exists(model_path):
+        os.makedirs("models", exist_ok=True)
         gdown.download(drive_link, model_path, quiet=False)
     return model_path
 
-# ✅ Google Drive 공유 링크 설정 (ID 변경 필요)
+# ✅ Google Drive 공유 링크 설정
 model_links = {
     "best_model.pth": "https://drive.google.com/uc?id=11u2cUNul_DZ0bJmykxXr90c9xYQD13CA",
     "best_model_fold_1.pth": "https://drive.google.com/uc?id=1ta9lx56Y74ypc87f-vx7fMlofdCS3O6V",
@@ -34,7 +34,8 @@ model_links = {
     "best_model_fold_5.pth": "https://drive.google.com/uc?id=11wGXOe6yZZgo8wDmzHrtFiJROn3JusKl",
 }
 
-# ✅ 훈련된 Faster R-CNN 모델 로드 함수
+# ✅ Faster R-CNN 모델 로드 함수
+@st.cache_resource
 def load_model(model_path, num_classes, device):
     model = fasterrcnn_resnet50_fpn(pretrained=True)
     in_features = model.roi_heads.box_predictor.cls_score.in_features
@@ -48,54 +49,47 @@ def load_model(model_path, num_classes, device):
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ✅ 모델 다운로드 및 로드
-model_path_single = download_model("best_model.pth", model_links["best_model.pth"])  # 단일 모델
+model_path_single = download_model("best_model.pth", model_links["best_model.pth"])
 model_paths_kfold = [
     download_model(f"best_model_fold_{i}.pth", model_links[f"best_model_fold_{i}.pth"])
     for i in range(1, 6)
-]  # K-Fold 모델들
+]
 
-# ✅ 클래스 인덱스 → 이름 변환 딕셔너리
+# ✅ 클래스 인덱스 → 이름 변환
 labels_inv = {1: "extruded", 2: "crack", 3: "cutting", 4: "side_stamped"}
 
 # ✅ Streamlit GUI 시작
 st.title("🔍 O-ring 불량 확인")
 st.markdown("### : 훈련된 Faster R-CNN 모델을 사용하여 결함 탐지")
 
-# ✅ 왼쪽 사이드바에 모델 선택 추가
+# ✅ 모델 선택
 st.sidebar.markdown("<h3 style='font-size:20px;'>🛠 사용할 모델을 선택하세요</h3>", unsafe_allow_html=True)
 model_option = st.sidebar.selectbox("", ["단일 모델", "K-Fold 앙상블"])
 
-# ✅ 선택한 모델 로드
+# ✅ 모델 로드
 if model_option == "단일 모델":
     model = load_model(model_path_single, num_classes=5, device=device)
 
-# ✅ 왼쪽 사이드바에 이미지 업로드 추가
+# ✅ 이미지 업로드
 st.sidebar.markdown("<h3 style='font-size:20px;'>📂 이미지를 업로드하세요</h3>", unsafe_allow_html=True)
 uploaded_files = st.sidebar.file_uploader("", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
 
-# ✅ 결과 저장을 위한 리스트
-all_results = []
-all_images = []
-
 # ✅ 이미지 인덱스 저장
 if "image_index" not in st.session_state:
-    st.session_state.image_index = 0  
+    st.session_state.image_index = 0
 
 if uploaded_files:
     num_files = len(uploaded_files)
 
     # ✅ 슬라이더 추가
     if num_files > 1:
-        st.markdown("<h3 style='font-size:20px;'>📷 선택된 이미지</h3>", unsafe_allow_html=True)
-        st.session_state.image_index = st.slider(
-            "", min_value=0, max_value=num_files-1, value=st.session_state.image_index
-        )
+        st.session_state.image_index = st.slider("", min_value=0, max_value=num_files-1, value=st.session_state.image_index)
     else:
-        st.session_state.image_index = 0  
+        st.session_state.image_index = 0
 
     # ✅ 현재 이미지 선택
     uploaded_file = uploaded_files[st.session_state.image_index]
-    image_name = uploaded_file.name  # ✅ 원본 파일명 저장
+    image_name = uploaded_file.name
     image = Image.open(uploaded_file).convert("RGB")
 
     # ✅ 이미지 텐서 변환
@@ -129,31 +123,36 @@ if uploaded_files:
         keep_indices = nms(final_boxes, final_scores, 0.3)
         final_boxes, final_scores, final_labels = final_boxes[keep_indices], final_scores[keep_indices], final_labels[keep_indices]
 
-    # ✅ 결과 저장 (JSON & 이미지)
-    result_data = {
-        "image_name": image_name,
-        "num_detections": len(final_boxes),
-        "detections": []
-    }
+    # ✅ 결과 여부 출력
+    result_text = "⚠ 결함 존재!" if len(final_boxes) > 0 else "✅ 결함 없음!"
+    text_color = "red" if len(final_boxes) > 0 else "black"
+    st.markdown(f"<h2 style='text-align: center; color: {text_color};'>{result_text}</h2>", unsafe_allow_html=True)
 
+    # ✅ 결과 시각화
     fig, ax = plt.subplots(figsize=(8, 8))
     img_with_boxes = draw_bounding_boxes((img_tensor * 255).byte(), final_boxes, colors="red", width=3)
     ax.imshow(img_with_boxes.permute(1, 2, 0).cpu())
 
     for i in range(len(final_boxes)):
-        x1, y1, x2, y2 = final_boxes[i].tolist()
+        x1, y1, _, _ = final_boxes[i]
         label = labels_inv.get(final_labels[i].item(), "Unknown")
         score = round(final_scores[i].item(), 2)
-
-        ax.text(x1, y1 - 5, f"{label} ({score:.2f})", color='white', fontsize=15, weight='bold', bbox=dict(facecolor='red', alpha=0.5))
-        result_data["detections"].append({"label": label, "confidence": score, "bbox": [x1, y1, x2, y2]})
+        ax.text(x1.item(), y1.item() - 5, f"{label} ({score:.2f})", color='white', fontsize=15, weight='bold', bbox=dict(facecolor='red', alpha=0.5))
 
     ax.axis("off")
-    img_io = io.BytesIO()
-    plt.savefig(img_io, format="jpeg", bbox_inches="tight", pad_inches=0)
-    plt.close(fig)
+    st.pyplot(fig)
 
-    all_results.append(result_data)
-    all_images.append((image_name, Image.open(img_io)))
+    # ✅ 이전/다음 버튼
+    col1, col2, col3 = st.columns([1, 6, 1])
+    with col1:
+        st.button("⬅ 이전", disabled=(st.session_state.image_index == 0), on_click=lambda: st.session_state.update({"image_index": st.session_state.image_index - 1}))
+    with col3:
+        st.button("다음 ➡", disabled=(st.session_state.image_index == num_files - 1), on_click=lambda: st.session_state.update({"image_index": st.session_state.image_index + 1}))
 
-    st.markdown('<a href="data:application/json;base64,{}" download="results.json">📂 JSON 다운로드</a>'.format(base64.b64encode(json.dumps(all_results).encode()).decode()), unsafe_allow_html=True)
+    # ✅ ZIP 다운로드 버튼
+    if st.button("📂 결과 저장"):
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zipf:
+            zipf.writestr(f"results/{image_name}", img_tensor.cpu().numpy().tobytes())
+        zip_buffer.seek(0)
+        st.download_button(label="📥 ZIP 파일 다운로드", data=zip_buffer, file_name="detection_results.zip", mime="application/zip")
