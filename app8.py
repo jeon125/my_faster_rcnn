@@ -117,9 +117,17 @@ if uploaded_files:
     if model_option == "단일 모델":
         with torch.no_grad():
             pred = model([img_tensor])[0]
-        final_boxes = pred["boxes"]
-        final_scores = pred["scores"]
-        final_labels = pred["labels"]
+            # ✅ 바운딩 박스, 점수, 라벨 추출
+        boxes = pred["boxes"]
+        scores = pred["scores"]
+        labels = pred["labels"]
+
+        # ✅ 신뢰도 임계값(0.5) 적용
+        threshold = 0.5
+        keep = scores > threshold
+        final_boxes = boxes[keep]
+        final_scores = scores[keep]
+        final_labels = labels[keep]
     else:
         final_boxes_list, final_scores_list, final_labels_list = [], [], []
         for path in model_paths_kfold:
