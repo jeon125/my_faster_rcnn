@@ -200,16 +200,16 @@ if uploaded_files:
     # ✅ 결과 이미지 표시
     st.image(img_io, caption=f"🔍 {image_name}", use_container_width=True)
 
-    # ✅ ZIP 다운로드 버튼
-    if st.button("📂 결과 저장"):
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w") as zipf:
-            for img_name, img_data in all_images:
-                zipf.writestr(f"results/{img_name}", img_data.getvalue())  # 예측 결과 이미지 저장
+# ✅ ZIP 다운로드 버튼
+if st.button("📂 결과 저장"):
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w") as zipf:
+        for img_name, img_data in all_images:
+            zipf.writestr(f"results/{img_name}", img_data.getvalue())  # 예측 결과 이미지 저장
 
-            # JSON 저장
-            json_str = json.dumps(all_results, indent=4)
-            zipf.writestr("results.json", json_str)
+        # JSON 저장
+        json_str = json.dumps(all_results, indent=4)
+        zipf.writestr("results.json", json_str)
 
-        zip_buffer.seek(0)
-        st.download_button(label="📥 ZIP 파일 다운로드", data=zip_buffer, file_name="detection_results.zip", mime="application/zip")
+    zip_buffer.seek(0)
+    st.download_button(label="📥 ZIP 파일 다운로드", data=zip_buffer, file_name="detection_results.zip", mime="application/zip")
