@@ -74,6 +74,10 @@ if model_option == "단일 모델":
 st.sidebar.markdown("<h3 style='font-size:20px;'>📂 이미지를 업로드하세요</h3>", unsafe_allow_html=True)
 uploaded_files = st.sidebar.file_uploader("", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
 
+# ✅ 결과 저장 리스트
+all_results = []
+all_images = []
+
 # ✅ 이미지 인덱스 저장
 if "image_index" not in st.session_state:
     st.session_state.image_index = 0
@@ -149,10 +153,24 @@ if uploaded_files:
         keep_indices = nms(final_boxes, final_scores, 0.3)
         final_boxes, final_scores, final_labels = final_boxes[keep_indices], final_scores[keep_indices], final_labels[keep_indices]
 
+    # ✅ 이전/다음 버튼
+    col1, col2, col3 = st.columns([1, 6, 1])
+    with col1:
+        st.button("⬅ 이전", disabled=(st.session_state.image_index == 0), on_click=lambda: st.session_state.update({"image_index": st.session_state.image_index - 1}))
+    with col3:
+        st.button("다음 ➡", disabled=(st.session_state.image_index == num_files - 1), on_click=lambda: st.session_state.update({"image_index": st.session_state.image_index + 1}))
+    
     # ✅ 결과 여부 출력
     result_text = "⚠ 결함 존재!" if len(final_boxes) > 0 else "✅ 결함 없음!"
     text_color = "red" if len(final_boxes) > 0 else "black"
     st.markdown(f"<h2 style='text-align: center; color: {text_color};'>{result_text}</h2>", unsafe_allow_html=True)
+    
+    # ✅ 결과 JSON 저장
+    result_data = {
+        "image_name": image_name,
+        "num_detections": len(final_boxes),
+        "detections": []
+    }
 
     # ✅ 결과 시각화
     fig, ax = plt.subplots(figsize=(8, 8))
@@ -160,20 +178,23 @@ if uploaded_files:
     ax.imshow(img_with_boxes.permute(1, 2, 0).cpu())
 
     for i in range(len(final_boxes)):
-        x1, y1, _, _ = final_boxes[i]
+        x1, y1, x2, y2 = final_boxes[i].tolist()
         label = labels_inv.get(final_labels[i].item(), "Unknown")
         score = round(final_scores[i].item(), 2)
-        ax.text(x1.item(), y1.item() - 5, f"{label} ({score:.2f})", color='white', fontsize=15, weight='bold', bbox=dict(facecolor='red', alpha=0.5))
+
+        ax.text(x1, y1 - 5, f"{label} ({score:.2f})", color='white', fontsize=15, weight='bold', bbox=dict(facecolor='red', alpha=0.5))
+        result_data["detections"].append({"label": label, "confidence": score, "bbox": [x1, y1, x2, y2]})
 
     ax.axis("off")
-    st.pyplot(fig)
+    img_io = io.BytesIO()
+    plt.savefig(img_io, format="jpeg", bbox_inches="tight", pad_inches=0)
+    plt.close(fig)
 
-    # ✅ 이전/다음 버튼
-    col1, col2, col3 = st.columns([1, 6, 1])
-    with col1:
-        st.button("⬅ 이전", disabled=(st.session_state.image_index == 0), on_click=lambda: st.session_state.update({"image_index": st.session_state.image_index - 1}))
-    with col3:
-        st.button("다음 ➡", disabled=(st.session_state.image_index == num_files - 1), on_click=lambda: st.session_state.update({"image_index": st.session_state.image_index + 1}))
+    all_results.append(result_data)
+    all_images.append((image_name, img_io))
+
+    # ✅ 결과 이미지 표시
+    st.image(img_io, caption=f"🔍 {image_name}", use_column_width=True)
 
     # ✅ ZIP 다운로드 버튼
     if st.button("📂 결과 저장"):
