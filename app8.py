@@ -92,6 +92,16 @@ if uploaded_files:
     image_name = uploaded_file.name
     image = Image.open(uploaded_file).convert("RGB")
 
+    # ✅ 이미지 전처리 (ROI 선택)
+    img_cv = np.array(image)
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
+    _, binary = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY_INV)
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        x, y, w, h = cv2.boundingRect(max(contours, key=cv2.contourArea))
+        cropped = img_cv[max(0, y-20):min(y+h+20, img_cv.shape[0]), max(0, x-20):min(x+w+20, img_cv.shape[1])]
+        image = Image.fromarray(cv2.resize(cropped, (500, 500)))
+
     # ✅ 이미지 텐서 변환
     img_tensor = F.to_tensor(image).to(device)
 
@@ -99,16 +109,13 @@ if uploaded_files:
     if model_option == "단일 모델":
         with torch.no_grad():
             pred = model([img_tensor])[0]
-        final_boxes = pred["boxes"]
-        final_scores = pred["scores"]
-        final_labels = pred["labels"]
+        final_boxes, final_scores, final_labels = pred["boxes"], pred["scores"], pred["labels"]
     else:
         final_boxes_list, final_scores_list, final_labels_list = [], [], []
         for path in model_paths_kfold:
             model_kfold = load_model(path, num_classes=5, device=device)
             with torch.no_grad():
                 pred = model_kfold([img_tensor])[0]
-
             final_boxes_list.append(pred["boxes"])
             final_scores_list.append(pred["scores"])
             final_labels_list.append(pred["labels"])
@@ -117,42 +124,33 @@ if uploaded_files:
         final_scores = torch.cat(final_scores_list, dim=0)
         final_labels = torch.cat(final_labels_list, dim=0)
 
-        # ✅ NMS 적용
         keep = final_scores > 0.5
         final_boxes, final_scores, final_labels = final_boxes[keep], final_scores[keep], final_labels[keep]
         keep_indices = nms(final_boxes, final_scores, 0.3)
         final_boxes, final_scores, final_labels = final_boxes[keep_indices], final_scores[keep_indices], final_labels[keep_indices]
 
-    # ✅ 결과 여부 출력
-    result_text = "⚠ 결함 존재!" if len(final_boxes) > 0 else "✅ 결함 없음!"
-    text_color = "red" if len(final_boxes) > 0 else "black"
-    st.markdown(f"<h2 style='text-align: center; color: {text_color};'>{result_text}</h2>", unsafe_allow_html=True)
-
     # ✅ 결과 시각화
-    fig, ax = plt.subplots(figsize=(8, 8))
     img_with_boxes = draw_bounding_boxes((img_tensor * 255).byte(), final_boxes, colors="red", width=3)
+    fig, ax = plt.subplots(figsize=(8, 8))
     ax.imshow(img_with_boxes.permute(1, 2, 0).cpu())
-
-    for i in range(len(final_boxes)):
-        x1, y1, _, _ = final_boxes[i]
-        label = labels_inv.get(final_labels[i].item(), "Unknown")
-        score = round(final_scores[i].item(), 2)
-        ax.text(x1.item(), y1.item() - 5, f"{label} ({score:.2f})", color='white', fontsize=15, weight='bold', bbox=dict(facecolor='red', alpha=0.5))
-
     ax.axis("off")
     st.pyplot(fig)
 
-    # ✅ 이전/다음 버튼
-    col1, col2, col3 = st.columns([1, 6, 1])
-    with col1:
-        st.button("⬅ 이전", disabled=(st.session_state.image_index == 0), on_click=lambda: st.session_state.update({"image_index": st.session_state.image_index - 1}))
-    with col3:
-        st.button("다음 ➡", disabled=(st.session_state.image_index == num_files - 1), on_click=lambda: st.session_state.update({"image_index": st.session_state.image_index + 1}))
-
-    # ✅ ZIP 다운로드 버튼
+    # ✅ ZIP 저장 버튼
     if st.button("📂 결과 저장"):
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w") as zipf:
-            zipf.writestr(f"results/{image_name}", img_tensor.cpu().numpy().tobytes())
+            img_pil = Image.fromarray(img_with_boxes.permute(1, 2, 0).byte().cpu().numpy())
+            img_io = io.BytesIO()
+            img_pil.save(img_io, format="JPEG")
+            zipf.writestr(f"images/{image_name}", img_io.getvalue())
+
+            result_data = {
+                "image_name": image_name,
+                "num_detections": len(final_boxes),
+                "detections": [{"label": labels_inv.get(l.item(), "Unknown"), "confidence": round(s.item(), 2)} for l, s in zip(final_labels, final_scores)]
+            }
+            zipf.writestr("results.json", json.dumps(result_data, indent=4))
+
         zip_buffer.seek(0)
-        st.download_button(label="📥 ZIP 파일 다운로드", data=zip_buffer, file_name="detection_results.zip", mime="application/zip")
+        st.download_button("📥 ZIP 다운로드", zip_buffer, "results.zip", "application/zip")
